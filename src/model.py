@@ -648,14 +648,17 @@ class EditorModel:
         self.floating_layer = None
         self.document_initialized = True
 
-    def delete_selection(self):
+    def delete_selection(self, push_undo=True):
         if self.floating_layer:
             # The pre-lift state was already pushed when movement started.
             self.floating_layer = None
-            return
+            return True
         if self.selection_rect:
-            self.push_undo_state()
+            if push_undo:
+                self.push_undo_state()
             self._clear_world_rect(self.selection_rect)
+            return True
+        return False
 
     def copy_selection(self, anchor_grid_pos):
         if not self.selection_rect:

@@ -247,7 +247,10 @@ class TextureCanvas(QWidget):
                         self.model.lift_selection()
                     self.move_start_world_pos = (wx, wy)
                     self.current_move_offset = (0, 0)
-                    self.interaction_snap_step = step
+                    # Selection movement uses the live zoom-derived snap step.
+                    # Do not freeze it at drag start because the user can zoom
+                    # while the mouse button remains held.
+                    self.interaction_snap_step = None
                 else:
                     if self.is_moving_pixels:
                         self.model.drop_selection(0, 0)
@@ -292,11 +295,7 @@ class TextureCanvas(QWidget):
                 self._perform_resize(wx, wy)
                 self.check_auto_scroll(event.pos())
             elif self.is_moving_pixels:
-                start_wx, start_wy = self.move_start_world_pos
-                step = self.interaction_snap_step or step
-                dx = math.floor((wx - start_wx) / step + 0.5) * step
-                dy = math.floor((wy - start_wy) / step + 0.5) * step
-                self.current_move_offset = (dx, dy)
+                self.current_move_offset = self._calculate_move_offset(wx, wy)
                 self.check_auto_scroll(event.pos())
             elif self.is_selecting:
                 step = self.interaction_snap_step or step
@@ -385,6 +384,14 @@ class TextureCanvas(QWidget):
 
         self.moving_json_region_names = intersecting_regions
         return True
+
+    def _calculate_move_offset(self, wx, wy):
+        """Snap a selection drag using the canvas's current zoom level."""
+        start_wx, start_wy = self.move_start_world_pos
+        step = self.get_snap_step()
+        dx = math.floor((wx - start_wx) / step + 0.5) * step
+        dy = math.floor((wy - start_wy) / step + 0.5) * step
+        return dx, dy
 
     def _commit_json_region_move_sync(self, dx, dy):
         moved_names = set(self.moving_json_region_names)
@@ -620,11 +627,7 @@ class TextureCanvas(QWidget):
             self._update_selection(ix, iy)
         elif self.resize_handle != RESIZE_NONE: self._perform_resize(wx, wy)
         elif self.is_moving_pixels:
-            start_wx, start_wy = self.move_start_world_pos
-            step = self.interaction_snap_step or step
-            dx = math.floor((wx - start_wx) / step + 0.5) * step
-            dy = math.floor((wy - start_wy) / step + 0.5) * step
-            self.current_move_offset = (dx, dy)
+            self.current_move_offset = self._calculate_move_offset(wx, wy)
         selected_x, selected_y = get_grid_pos(wx, wy)
         if self.parent() and hasattr(self.parent(), 'update_mouse_status'):
             self.parent().update_mouse_status(

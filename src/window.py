@@ -82,7 +82,7 @@ class ClickToCopyLabel(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PixelEditor ver 8.3 by phsonh")
+        self.setWindowTitle("PixelEditor ver 8.4 by phsonh")
         self.resize(1300, 800)
         self.setAcceptDrops(True)
 
@@ -882,14 +882,15 @@ class MainWindow(QMainWindow):
         self.exit_edit_json_mode()
         return True
 
-    def delete_json_regions(self, names):
+    def delete_json_regions(self, names, push_undo=True):
         names = list(dict.fromkeys(
             name for name in names if name in self.canvas.model.json_regions
         ))
         if not names:
             return False
 
-        self.canvas.model.push_undo_state()
+        if push_undo:
+            self.canvas.model.push_undo_state()
         for name in names:
             del self.canvas.model.json_regions[name]
             self.canvas.model.json_region_centers.pop(name, None)
@@ -925,40 +926,34 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        selection = QRect(selection).normalized()
-        intersecting = []
-        partial_names = []
+        self.canvas._commit_floating_selection()
+        selection = QRect(self.canvas.model.selection_rect).normalized()
+        contained_names = []
         for name, rect in self.canvas.model.json_regions.items():
             region_rect = QRect(rect).normalized()
-            if not selection.intersects(region_rect):
-                continue
-            intersecting.append(name)
-            if not selection.contains(region_rect):
-                partial_names.append(name)
+            if selection.contains(region_rect):
+                contained_names.append(name)
 
-        if partial_names:
-            preview = "、".join(partial_names[:3])
-            if len(partial_names) > 3:
-                preview += f" 等 {len(partial_names)} 个"
-            self.statusBar().showMessage(
-                f"未删除：选区未完整包含切片 {preview}", 4500
-            )
-            return False
+        self.canvas.model.push_undo_state()
+        pixels_deleted = self.canvas.model.delete_selection(push_undo=False)
+        regions_deleted = self.delete_json_regions(
+            contained_names, push_undo=False
+        )
+        self.canvas.refresh_selected_pixel_ui()
+        self.update_selection_ui()
+        self.canvas.update()
 
-        if not intersecting:
+        if contained_names:
             self.statusBar().showMessage(
-                "Ctrl+Del 已触发：选区内没有 JSON 切片", 3500
-            )
-            return False
-
-        names = intersecting
-        if self.delete_json_regions(names):
-            self.statusBar().showMessage(
-                f"已删除选区内 {len(names)} 个完整 JSON 切片（画布像素未修改）",
+                f"已删除选区像素及 {len(contained_names)} 个完整 JSON 切片",
                 3500,
             )
-            return True
-        return False
+        else:
+            self.statusBar().showMessage(
+                "已删除选区像素；选区内没有完整包含的 JSON 切片",
+                3500,
+            )
+        return bool(pixels_deleted or regions_deleted)
 
     def trigger_ctrl_delete(self):
         if self._ctrl_delete_consumed:
